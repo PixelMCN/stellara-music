@@ -71,6 +71,12 @@ class MusicPlayer(wavelink.Player):
         """Update the timestamp of the last interaction with the player"""
         self.last_interaction = datetime.now()
 
+    @classmethod
+    async def update_last_interaction(cls, player):
+        """Class method to update last_interaction"""
+        if player and isinstance(player, MusicPlayer):
+            player.last_interaction = datetime.now()
+
     def is_inactive(self) -> bool:
         """Check if the player has been inactive for too long"""
         return (datetime.now() - self.last_interaction).total_seconds() > INACTIVITY_TIMEOUT
@@ -293,7 +299,9 @@ async def play(interaction: discord.Interaction, query: str) -> None:
     
     # Only update last_interaction if we have a voice client
     if interaction.guild.voice_client:
-        await MusicPlayer.update_last_interaction(interaction.guild.voice_client)
+        player = cast(MusicPlayer, interaction.guild.voice_client)
+        if player:
+            await player.update_last_interaction()
 
     # Check if user is in a voice channel
     if not interaction.user.voice or not interaction.user.voice.channel:
@@ -315,10 +323,12 @@ async def play(interaction: discord.Interaction, query: str) -> None:
             await interaction.followup.send("I was unable to join this voice channel. Please try again.", ephemeral=True)
             return
 
-    if not hasattr(player, "home"):
+    # Fix for player.home being None
+    if not hasattr(player, "home") or player.home is None:
         player.home = interaction.channel
     elif player.home != interaction.channel:
-        await interaction.followup.send(f"You can only play songs in {player.home.mention}, as the player has already started there.", ephemeral=True)
+        channel_mention = player.home.mention if player.home else "#unknown-channel"
+        await interaction.followup.send(f"You can only play songs in {channel_mention}, as the player has already started there.", ephemeral=True)
         return
 
     try:
@@ -407,7 +417,12 @@ async def play(interaction: discord.Interaction, query: str) -> None:
 async def select(interaction: discord.Interaction, number: int) -> None:
     """Select a track from search results."""
     await interaction.response.defer()
-    await MusicPlayer.update_last_interaction(interaction.guild.voice_client if interaction.guild.voice_client else None)
+    
+    # Only update last_interaction if we have a voice client
+    if interaction.guild.voice_client:
+        player = cast(MusicPlayer, interaction.guild.voice_client)
+        if player:
+            await player.update_last_interaction()
     
     if interaction.user.id not in bot.search_results:
         await interaction.followup.send("You don't have any active search results. Use `/play` to search for songs first.", ephemeral=True)
@@ -452,11 +467,12 @@ async def select(interaction: discord.Interaction, number: int) -> None:
 async def skip(interaction: discord.Interaction) -> None:
     """Skip the current song."""
     player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
     
     if not player or not player.playing:
         await interaction.response.send_message("No song is currently playing.", ephemeral=True)
         return
+    
+    await player.update_last_interaction()
     
     # Check DJ permissions if required for destructive actions
     if player.dj_role_required and not await has_dj_permissions(interaction):
@@ -494,11 +510,12 @@ async def skip(interaction: discord.Interaction) -> None:
 async def pause(interaction: discord.Interaction) -> None:
     """Pause the currently playing song."""
     player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
     
     if not player or not player.playing:
         await interaction.response.send_message("No song is currently playing.", ephemeral=True)
         return
+    
+    await player.update_last_interaction()
         
     if player.paused:
         await interaction.response.send_message("The player is already paused.", ephemeral=True)
@@ -512,11 +529,12 @@ async def pause(interaction: discord.Interaction) -> None:
 async def resume(interaction: discord.Interaction) -> None:
     """Resume the paused song."""
     player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
     
     if not player:
         await interaction.response.send_message("I'm not currently in a voice channel.", ephemeral=True)
         return
+    
+    await player.update_last_interaction()
         
     if not player.paused:
         await interaction.response.send_message("The player is not currently paused.", ephemeral=True)
@@ -530,11 +548,12 @@ async def resume(interaction: discord.Interaction) -> None:
 async def stop(interaction: discord.Interaction) -> None:
     """Stop the music and clear the queue."""
     player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
     
     if not player:
         await interaction.response.send_message("I'm not currently in a voice channel.", ephemeral=True)
         return
+    
+    await player.update_last_interaction()
     
     # Check DJ permissions
     if player.dj_role_required and not await has_dj_permissions(interaction):
@@ -553,11 +572,12 @@ async def stop(interaction: discord.Interaction) -> None:
 async def queue(interaction: discord.Interaction) -> None:
     """Show the current music queue."""
     player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
     
     if not player:
         await interaction.response.send_message("I'm not currently in a voice channel.", ephemeral=True)
         return
+    
+    await player.update_last_interaction()
 
     if player.queue.is_empty and not player.current_track:
         await interaction.response.send_message("The queue is empty.", ephemeral=True)
@@ -627,11 +647,12 @@ async def queue(interaction: discord.Interaction) -> None:
 async def nowplaying(interaction: discord.Interaction) -> None:
     """Show information about the currently playing track."""
     player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
     
     if not player or not player.current_track:
         await interaction.response.send_message("No song is currently playing.", ephemeral=True)
         return
+    
+    await player.update_last_interaction()
     
     track = player.current_track
     position = int(player.position)
@@ -703,11 +724,12 @@ async def disconnect(interaction: discord.Interaction) -> None:
 async def volume(interaction: discord.Interaction, value: int) -> None:
     """Change the volume of the player (0-100)."""
     player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
     
     if not player:
         await interaction.response.send_message("I'm not currently in a voice channel.", ephemeral=True)
         return
+    
+    await player.update_last_interaction()
 
     if not 0 <= value <= 100:
         await interaction.response.send_message("Volume must be between 0 and 100.", ephemeral=True)
@@ -736,420 +758,4 @@ async def volume(interaction: discord.Interaction, value: int) -> None:
     app_commands.Choice(name="Queue Loop 🔁", value="queue"),
     app_commands.Choice(name="Loop Off ⏹️", value="off"),
 ])
-async def loop(interaction: discord.Interaction, mode: str) -> None:
-    """Toggle looping for the current track or entire queue."""
-    player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
-    
-    if not player:
-        await interaction.response.send_message("I'm not currently in a voice channel.", ephemeral=True)
-        return
-    
-    # Check DJ permissions
-    if player.dj_role_required and not await has_dj_permissions(interaction):
-        await interaction.response.send_message("You need DJ permissions to change loop settings.", ephemeral=True)
-        return
-    
-    # Set the loop mode
-    if mode == "track":
-        player.loop = True
-        player.loop_queue = False
-        message = "🔂 Enabled track loop mode! The current song will repeat."
-    elif mode == "queue":
-        player.loop = False
-        player.loop_queue = True
-        message = "🔁 Enabled queue loop mode! The entire queue will repeat."
-    else:  # off
-        player.loop = False
-        player.loop_queue = False
-        message = "⏹️ Disabled all loop modes."
-    
-    await interaction.response.send_message(message)
-
-
-@bot.tree.command(name="shuffle", description="Shuffle the current queue.")
-async def shuffle(interaction: discord.Interaction) -> None:
-    """Shuffle the current queue."""
-    player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
-    
-    if not player:
-        await interaction.response.send_message("I'm not currently in a voice channel.", ephemeral=True)
-        return
-    
-    if player.queue.is_empty:
-        await interaction.response.send_message("The queue is empty.", ephemeral=True)
-        return
-    
-    # Check DJ permissions
-    if player.dj_role_required and not await has_dj_permissions(interaction):
-        await interaction.response.send_message("You need DJ permissions to shuffle the queue.", ephemeral=True)
-        return
-    
-    # Get all tracks from queue
-    queue_tracks = list(player.queue)
-    
-    # Clear the queue and shuffle tracks
-    player.queue.clear()
-    random.shuffle(queue_tracks)
-    
-    # Add shuffled tracks back to queue
-    for track in queue_tracks:
-        await player.queue.put_wait(track)
-        
-    embed = discord.Embed(
-        title="Queue Shuffled 🔀",
-        description=f"Shuffled {len(queue_tracks)} tracks in the queue.",
-        color=discord.Color.green()
-    )
-    
-    await interaction.response.send_message(embed=embed)
-
-
-@bot.tree.command(name="remove", description="Remove a specific track from the queue.")
-@app_commands.describe(position="The position of the track to remove (1, 2, 3, etc.)")
-async def remove(interaction: discord.Interaction, position: int) -> None:
-    """Remove a specific track from the queue."""
-    player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
-    
-    if not player:
-        await interaction.response.send_message("I'm not currently in a voice channel.", ephemeral=True)
-        return
-    
-    if player.queue.is_empty:
-        await interaction.response.send_message("The queue is empty.", ephemeral=True)
-        return
-    
-    # Check DJ permissions
-    if player.dj_role_required and not await has_dj_permissions(interaction):
-        await interaction.response.send_message("You need DJ permissions to remove tracks from the queue.", ephemeral=True)
-        return
-    
-    # Validate position
-    if position < 1 or position > player.queue.count:
-        await interaction.response.send_message(f"Invalid position. Please choose a number between 1 and {player.queue.count}.", ephemeral=True)
-        return
-    
-    # Get all tracks from queue
-    queue_tracks = list(player.queue)
-    
-    # Get track to remove
-    removed_track = queue_tracks[position - 1]
-    
-    # Clear queue and add back all tracks except the removed one
-    player.queue.clear()
-    for i, track in enumerate(queue_tracks):
-        if i != position - 1:
-            await player.queue.put_wait(track)
-    
-    embed = discord.Embed(
-        title="Track Removed ❌",
-        description=f"Removed **{removed_track.title}**\nby `{removed_track.author}` from the queue.",
-        color=discord.Color.red()
-    )
-    
-    await interaction.response.send_message(embed=embed)
-
-
-@bot.tree.command(name="clear", description="Clear the entire queue.")
-async def clear(interaction: discord.Interaction) -> None:
-    """Clear the entire queue."""
-    player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
-    
-    if not player:
-        await interaction.response.send_message("I'm not currently in a voice channel.", ephemeral=True)
-        return
-    
-    if player.queue.is_empty:
-        await interaction.response.send_message("The queue is already empty.", ephemeral=True)
-        return
-    
-    # Check DJ permissions
-    if player.dj_role_required and not await has_dj_permissions(interaction):
-        await interaction.response.send_message("You need DJ permissions to clear the queue.", ephemeral=True)
-        return
-    
-    queue_size = player.queue.count
-    player.queue.clear()
-    
-    embed = discord.Embed(
-        title="Queue Cleared 🧹",
-        description=f"Cleared {queue_size} tracks from the queue.",
-        color=discord.Color.red()
-    )
-    
-    await interaction.response.send_message(embed=embed)
-
-
-@bot.tree.command(name="seek", description="Seek to a specific position in the current track.")
-@app_commands.describe(position="Position in seconds (e.g., 30 for 0:30, 120 for 2:00)")
-async def seek(interaction: discord.Interaction, position: int) -> None:
-    """Seek to a specific position in the current track."""
-    player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
-    
-    if not player or not player.current_track:
-        await interaction.response.send_message("No song is currently playing.", ephemeral=True)
-        return
-    
-    # Convert seconds to milliseconds
-    position_ms = position * 1000
-    
-    # Ensure position is within track bounds
-    if position_ms < 0 or position_ms > player.current_track.length:
-        await interaction.response.send_message(
-            f"Position must be between 0 and {player.current_track.length // 1000} seconds.", 
-            ephemeral=True
-        )
-        return
-    
-    # Seek to position
-    await player.seek(position_ms)
-    
-    # Create embed for seek confirmation
-    embed = discord.Embed(
-        title="Position Changed ⏩",
-        description=f"Seeking to position `{player.format_duration(position_ms)}` in the current track.",
-        color=discord.Color.blue()
-    )
-    
-    await interaction.response.send_message(embed=embed)
-
-
-@bot.tree.command(name="dj", description="Toggle DJ mode or add/remove a user as DJ.")
-@app_commands.describe(
-    action="Enable/disable DJ mode or add/remove a DJ",
-    user="The user to add or remove as DJ (only needed for add/remove actions)"
-)
-@app_commands.choices(action=[
-    app_commands.Choice(name="Enable DJ Mode", value="enable"),
-    app_commands.Choice(name="Disable DJ Mode", value="disable"),
-    app_commands.Choice(name="Add DJ", value="add"),
-    app_commands.Choice(name="Remove DJ", value="remove"),
-])
-async def dj(
-    interaction: discord.Interaction, 
-    action: str, 
-    user: discord.Member = None
-) -> None:
-    """Toggle DJ mode or add/remove a user as DJ."""
-    player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    
-    # Only guild owner or admin can change DJ settings
-    if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
-        await interaction.response.send_message("You need administrator permissions to manage DJ settings.", ephemeral=True)
-        return
-    
-    if not player and interaction.guild.voice_client:
-        player = cast(MusicPlayer, interaction.guild.voice_client)
-    
-    if not player:
-        # Create a temporary player object if none exists
-        player = MusicPlayer(client=bot)
-    
-    if action == "enable":
-        player.dj_role_required = True
-        await interaction.response.send_message("🎧 Enabled DJ mode. Only users with the DJ role can use certain commands.")
-    
-    elif action == "disable":
-        player.dj_role_required = False
-        await interaction.response.send_message("🎧 Disabled DJ mode. All users can use all commands.")
-    
-    elif action in ["add", "remove"]:
-        if not user:
-            await interaction.response.send_message("Please specify a user to add or remove as DJ.", ephemeral=True)
-            return
-        
-        if action == "add":
-            player.dj_members.add(user.id)
-            await interaction.response.send_message(f"🎧 Added {user.mention} as a DJ.")
-        else:  # remove
-            if user.id in player.dj_members:
-                player.dj_members.remove(user.id)
-                await interaction.response.send_message(f"🎧 Removed {user.mention} from DJs.")
-            else:
-                await interaction.response.send_message(f"{user.mention} is not a DJ.", ephemeral=True)
-    
-    # Update last interaction
-    await MusicPlayer.update_last_interaction(player)
-
-
-@bot.tree.command(name="boost", description="Apply a sound filter to the player.")
-@app_commands.describe(filter_type="The type of audio filter to apply")
-@app_commands.choices(filter_type=[
-    app_commands.Choice(name="Bass Boost", value="bassboost"),
-    app_commands.Choice(name="Nightcore", value="nightcore"),
-    app_commands.Choice(name="8D Audio", value="8d"),
-    app_commands.Choice(name="Clear Filters", value="clear"),
-])
-async def boost(interaction: discord.Interaction, filter_type: str) -> None:
-    """Apply a sound filter to the player."""
-    player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
-    
-    if not player or not player.playing:
-        await interaction.response.send_message("No song is currently playing.", ephemeral=True)
-        return
-    
-    filters = player.filters
-    filter_name = filter_type.capitalize()
-    
-    await interaction.response.defer()
-    
-    try:
-        if filter_type == "bassboost":
-            # Apply bass boost EQ
-            bands = [
-                {"band": 0, "gain": 0.6},  # 60Hz
-                {"band": 1, "gain": 0.5},  # 150Hz
-                {"band": 2, "gain": 0.3},  # 400Hz
-                {"band": 3, "gain": 0.1},  # 1kHz
-            ]
-            filters.equalizer.set(bands=bands)
-            filter_name = "Bass Boost"
-            
-        elif filter_type == "nightcore":
-            # Increase speed and pitch
-            filters.timescale.set(speed=1.15, pitch=1.2, rate=1.0)
-            filter_name = "Nightcore"
-            
-        elif filter_type == "8d":
-            # Apply rotating 8D audio effect
-            filters.rotation.set(rotation_hz=0.2)  # Rotate 0.2 times per second
-            filter_name = "8D Audio"
-            
-        elif filter_type == "clear":
-            # Reset all filters
-            await player.set_filters()
-            await interaction.followup.send("🔄 Cleared all audio filters.")
-            return
-        
-        # Apply the selected filter
-        await player.set_filters(filters)
-        
-        embed = discord.Embed(
-            title="Filter Applied 🎛️",
-            description=f"Applied the **{filter_name}** filter to the player.",
-            color=discord.Color.purple()
-        )
-        await interaction.followup.send(embed=embed)
-        
-    except Exception as e:
-        logging.error(f"Error applying filter: {e}", exc_info=True)
-        await interaction.followup.send(f"An error occurred while applying the filter: {e}", ephemeral=True)
-
-
-@bot.tree.command(name="lyrics", description="Try to find lyrics for the current song.")
-async def lyrics(interaction: discord.Interaction) -> None:
-    """Try to find lyrics for the current song."""
-    player: MusicPlayer = cast(MusicPlayer, interaction.guild.voice_client)
-    await MusicPlayer.update_last_interaction(player)
-    
-    if not player or not player.current_track:
-        await interaction.response.send_message("No song is currently playing.", ephemeral=True)
-        return
-    
-    await interaction.response.defer()
-    
-    track = player.current_track
-    query = f"{track.title} {track.author} lyrics"
-    
-    embed = discord.Embed(
-        title=f"Lyrics for {track.title}",
-        description="This feature would connect to a lyrics API to fetch lyrics.\n\n"
-                   "Since we don't have an actual lyrics API in this example, this is a placeholder. "
-                   "In a real implementation, you would:\n"
-                   "1. Use a service like Genius, Musixmatch, or others\n"
-                   "2. Make an API request using the song title and artist\n"
-                   "3. Display the formatted lyrics here\n\n"
-                   f"Search query would be: `{query}`",
-        color=discord.Color.gold()
-    )
-    
-    if track.artwork:
-        embed.set_thumbnail(url=track.artwork)
-    
-    await interaction.followup.send(embed=embed)
-
-
-@bot.tree.command(name="help", description="Show a list of all available commands.")
-async def help_command(interaction: discord.Interaction) -> None:
-    """Show a list of all available commands."""
-    embed = discord.Embed(
-        title="🎵 Stellara Music Bot Commands",
-        description="Here are all the available commands for the music bot:",
-        color=discord.Color.blurple()
-    )
-
-    embed.add_field(
-        name="🎶 Playback Commands",
-        value=(
-            "`/play <query>` - Play a song with the given query (supports YouTube/Spotify links)\n"
-            "`/pause` - Pause the currently playing song\n"
-            "`/resume` - Resume the paused song\n"
-            "`/stop` - Stop the music and clear the queue\n"
-            "`/skip` - Skip the current song\n"
-            "`/seek <position>` - Jump to a specific position in the current track"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="📋 Queue Commands",
-        value=(
-            "`/queue` - Show the current music queue\n"
-            "`/nowplaying` - Show details about the currently playing track\n"
-            "`/clear` - Clear the entire queue\n"
-            "`/remove <position>` - Remove a specific track from the queue\n"
-            "`/shuffle` - Shuffle the tracks in the queue\n"
-            "`/loop <mode>` - Set loop mode (track, queue, or off)"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="🔍 Search Commands",
-        value=(
-            "`/select <number>` - Select a track from search results"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="🔊 Audio Controls",
-        value=(
-            "`/volume <value>` - Change the volume of the player (0-100)\n"
-            "`/boost <filter>` - Apply audio filters (bassboost, nightcore, 8d, clear)"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="🛠️ Other Commands",
-        value=(
-            "`/disconnect` - Disconnect the bot from the voice channel\n"
-            "`/lyrics` - Try to find lyrics for the current song\n"
-            "`/dj <action>` - Manage DJ mode and permissions"
-        ),
-        inline=False
-    )
-
-    embed.set_footer(text="Made with ❤️ | Bot automatically disconnects after 5 minutes of inactivity")
-    embed.set_thumbnail(url="https://i.imgur.com/8eQj6wQ.png")
-
-    await interaction.response.send_message(embed=embed)
-
-
-async def main() -> None:
-    # Retrieve the bot token from the .env file
-    bot_token = os.getenv("BOT_TOKEN")
-    if not bot_token:
-        raise ValueError("Bot token not found in .env file.")
-
-    async with bot:
-        await bot.start(bot_token)
-
-
-asyncio.run(main())
+async def loop(interaction: discord.Interaction, mode:
