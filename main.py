@@ -13,7 +13,8 @@ import os
 # Load environment variables from .env file
 load_dotenv()
 
-GUILD_ID = discord.Object(id=1358804712018804916)  # Replace with your guild ID
+LAVALINK_URI = os.getenv("LAVALINK_URI")
+LAVALINK_PASSWORD = os.getenv("LAVALINK_PASSWORD")  # Replace with your guild ID
 
 class Bot(commands.Bot):
     def __init__(self) -> None:
@@ -27,8 +28,8 @@ class Bot(commands.Bot):
         # Use your provided Lavalink server credentials
         nodes = [
             wavelink.Node(
-                uri="wss://lavalinkv4.serenetia.com:443",
-                password="https://dsc.gg/ajidevserver"
+                uri=LAVALINK_URI,
+                password=LAVALINK_PASSWORD
             )
         ]
 
